@@ -1,0 +1,69 @@
+# docker-compose.yml
+# ------------------
+# Local development setup for week 1. Brings up all four services so you
+# can verify they communicate before moving to Kubernetes/EKS.
+#
+# Notes:
+#   - Metrics Collector won't fully work locally (no Kubernetes API),
+#     but it will start up and you can mock it out.
+#   - Forecast Client and RL Decision Service need real AWS creds OR
+#     stub-mode env vars (see commented blocks).
+#
+# Usage:
+#   export AWS_ACCESS_KEY_ID=...
+#   export AWS_SECRET_ACCESS_KEY=...
+#   export AWS_REGION=ap-south-1
+#   export S3_BUCKET=your-bucket
+#   export SAGEMAKER_ENDPOINT=your-endpoint
+#   export MODEL_S3_BUCKET=your-bucket
+#   docker compose up --build
+
+version: "3.9"
+
+services:
+  workload:
+    build: ./workload-service
+    ports:
+      - "5000:5000"
+    environment:
+      - HOSTNAME=workload-local
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  forecast-client:
+    build: ./forecast-client
+    ports:
+      - "5001:5001"
+    environment:
+      - SAGEMAKER_ENDPOINT=${SAGEMAKER_ENDPOINT}
+      - AWS_REGION=${AWS_REGION:-ap-south-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - CW_NAMESPACE=IntelligentScheduler
+
+  rl-decision:
+    build: ./rl-decision-service
+    ports:
+      - "5002:5002"
+    environment:
+      - MODEL_S3_BUCKET=${MODEL_S3_BUCKET}
+      - MODEL_S3_KEY=rl-policy.zip
+      - AWS_REGION=${AWS_REGION:-ap-south-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - MIN_PODS=1
+      - MAX_PODS=10
+
+  # Metrics collector intentionally NOT included by default.
+  # Uncomment if you set up a local kind/minikube cluster and want to test it:
+  #
+  # metrics-collector:
+  #   build: ./metrics-collector
+  #   environment:
+  #     - S3_BUCKET=${S3_BUCKET}
+  #     - AWS_REGION=${AWS_REGION:-ap-south-1}
+  #     - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+  #     - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
