@@ -30,12 +30,15 @@ from kubernetes import client, config
 from botocore.exceptions import ClientError
 
 # ---------- Configuration (read from environment) ----------
+MOCK_MODE = os.environ.get("MOCK_MODE", "false").lower() == "true"
 NAMESPACE = os.environ.get("NAMESPACE", "default")
 WORKLOAD_LABEL = os.environ.get("WORKLOAD_LABEL", "app=workload-service")
 WORKLOAD_PORT = int(os.environ.get("WORKLOAD_PORT", "5000"))
+# In MOCK_MODE, we can provide a comma-separated list of IPs or hostnames
+STATIC_WORKLOAD_ENDPOINTS = os.environ.get("STATIC_WORKLOAD_ENDPOINTS", "workload:5000")
 
 CLOUDWATCH_NAMESPACE = os.environ.get("CW_NAMESPACE", "IntelligentScheduler")
-S3_BUCKET = os.environ["S3_BUCKET"]              # required
+S3_BUCKET = os.environ.get("S3_BUCKET")              # optional in MOCK_MODE
 S3_KEY = os.environ.get("S3_KEY", "metrics/history.csv")
 AWS_REGION = os.environ.get("AWS_REGION", "ap-south-1")
 
@@ -49,10 +52,17 @@ logging.basicConfig(
 log = logging.getLogger("metrics-collector")
 
 # ---------- Clients ----------
-config.load_incluster_config()           # uses the pod's ServiceAccount
-core_v1 = client.CoreV1Api()
-cw = boto3.client("cloudwatch", region_name=AWS_REGION)
-s3 = boto3.client("s3", region_name=AWS_REGION)
+core_v1 = None
+cw = None
+s3 = None
+
+if not MOCK_MODE:
+    config.load_incluster_config()           # uses the pod's ServiceAccount
+    core_v1 = client.CoreV1Api()
+    cw = boto3.client("cloudwatch", region_name=AWS_REGION)
+    if not S3_BUCKET:
+        raise ValueError("S3_BUCKET is required when MOCK_MODE is false")
+    s3 = boto3.client("s3", region_name=AWS_REGION)
 
 # Track previous total request count so we can compute rate
 _previous_total_requests = 0
@@ -66,6 +76,12 @@ CSV_HEADER = [
 
 def list_workload_pods():
     """Return running pods of the workload service."""
+    if MOCK_MODE:
+        # Return a list of "mock" pod-like objects with a status.pod_ip attribute
+        from types import SimpleNamespace
+        endpoints = STATIC_WORKLOAD_ENDPOINTS.split(",")
+        return [SimpleNamespace(status=SimpleNamespace(pod_ip=ep.split(":")[0])) for ep in endpoints]
+
     pods = core_v1.list_namespaced_pod(
         namespace=NAMESPACE,
         label_selector=WORKLOAD_LABEL,
@@ -135,6 +151,9 @@ def collect_once():
 
 def push_to_cloudwatch(metrics):
     """Send custom metrics to CloudWatch."""
+    if MOCK_MODE:
+        log.info("MOCK_MODE: Skipping CloudWatch push")
+        return
     try:
         cw.put_metric_data(
             Namespace=CLOUDWATCH_NAMESPACE,
@@ -161,12 +180,21 @@ def push_to_cloudwatch(metrics):
 
 
 def append_to_s3(metrics):
-    """Read existing CSV from S3, append a row, write it back.
+    """Read existing CSV from S3, append a row, write it back."""
+    if MOCK_MODE:
+        log.info("MOCK_MODE: Appending to local CSV instead of S3")
+        local_path = "history_local.csv"
+        file_exists = os.path.isfile(local_path)
+        with open(local_path, "a") as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(CSV_HEADER)
+            writer.writerow([metrics[c] for c in CSV_HEADER])
+        return
 
-    Note: this read-modify-write pattern is fine for a school project and
-    a single collector pod. In production you'd use Kinesis Firehose or
-    an append-friendly format like Parquet partitions.
-    """
+    # Note: this read-modify-write pattern is fine for a school project and
+    # a single collector pod. In production you'd use Kinesis Firehose or
+    # an append-friendly format like Parquet partitions.
     try:
         # Try to fetch existing CSV
         try:

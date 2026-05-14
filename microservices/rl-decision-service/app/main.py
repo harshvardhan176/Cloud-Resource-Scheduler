@@ -24,9 +24,10 @@ from flask import Flask, request, jsonify
 from stable_baselines3 import DQN
 
 # ---------- Configuration ----------
-S3_BUCKET = os.environ["MODEL_S3_BUCKET"]            # required
+MOCK_MODE = os.environ.get("MOCK_MODE", "false").lower() == "true"
+S3_BUCKET = os.environ.get("MODEL_S3_BUCKET")            # optional in MOCK_MODE
 S3_KEY = os.environ.get("MODEL_S3_KEY", "rl-policy.zip")
-LOCAL_MODEL_PATH = "/tmp/rl-policy.zip"
+LOCAL_MODEL_PATH = os.environ.get("LOCAL_MODEL_PATH", "/tmp/rl-policy.zip")
 AWS_REGION = os.environ.get("AWS_REGION", "ap-south-1")
 
 MIN_PODS = int(os.environ.get("MIN_PODS", "1"))
@@ -44,21 +45,33 @@ log = logging.getLogger("rl-decision-service")
 
 # ---------- Clients ----------
 app = Flask(__name__)
-s3 = boto3.client("s3", region_name=AWS_REGION)
+s3 = None
+if not MOCK_MODE:
+    s3 = boto3.client("s3", region_name=AWS_REGION)
 
 _model = None
 _model_lock = Lock()
 
 
 def download_and_load_model():
-    """Pull the trained model from S3 and load it."""
+    """Pull the trained model from S3 (or use local path) and load it."""
     global _model
-    log.info("Downloading model from s3://%s/%s", S3_BUCKET, S3_KEY)
-    s3.download_file(S3_BUCKET, S3_KEY, LOCAL_MODEL_PATH)
-    log.info("Loading model into memory")
+
+    if os.path.exists(LOCAL_MODEL_PATH):
+        log.info("Found local model at %s, loading it...", LOCAL_MODEL_PATH)
+    elif not MOCK_MODE:
+        if not S3_BUCKET:
+            raise ValueError("MODEL_S3_BUCKET is required when MOCK_MODE is false and no local model exists")
+        log.info("Downloading model from s3://%s/%s to %s", S3_BUCKET, S3_KEY, LOCAL_MODEL_PATH)
+        s3.download_file(S3_BUCKET, S3_KEY, LOCAL_MODEL_PATH)
+    else:
+        log.warning("No local model found and in MOCK_MODE. Skipping model load.")
+        return
+
+    log.info("Loading model into memory from %s", LOCAL_MODEL_PATH)
     with _model_lock:
         _model = DQN.load(LOCAL_MODEL_PATH)
-    log.info("Model loaded")
+    log.info("Model loaded successfully")
 
 
 def fallback_decision(state):
