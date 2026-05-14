@@ -23,7 +23,8 @@ import boto3
 from flask import Flask, request, jsonify
 
 # ---------- Configuration ----------
-SAGEMAKER_ENDPOINT = os.environ["SAGEMAKER_ENDPOINT"]      # required
+MOCK_MODE = os.environ.get("MOCK_MODE", "false").lower() == "true"
+SAGEMAKER_ENDPOINT = os.environ.get("SAGEMAKER_ENDPOINT")  # optional in MOCK_MODE
 CW_NAMESPACE = os.environ.get("CW_NAMESPACE", "IntelligentScheduler")
 METRIC_NAME = os.environ.get("METRIC_NAME", "RequestRate")
 AWS_REGION = os.environ.get("AWS_REGION", "ap-south-1")
@@ -39,8 +40,14 @@ log = logging.getLogger("forecast-client")
 
 # ---------- Clients ----------
 app = Flask(__name__)
-sm_runtime = boto3.client("sagemaker-runtime", region_name=AWS_REGION)
-cw = boto3.client("cloudwatch", region_name=AWS_REGION)
+sm_runtime = None
+cw = None
+
+if not MOCK_MODE:
+    if not SAGEMAKER_ENDPOINT:
+        raise ValueError("SAGEMAKER_ENDPOINT is required when MOCK_MODE is false")
+    sm_runtime = boto3.client("sagemaker-runtime", region_name=AWS_REGION)
+    cw = boto3.client("cloudwatch", region_name=AWS_REGION)
 
 # Simple in-memory cache so we don't hammer SageMaker on every Lambda call
 _cache = {"timestamp": 0, "data": None}
@@ -121,8 +128,17 @@ def forecast():
         })
 
     try:
-        start_ts, history = get_recent_history()
-        mean, p90 = call_sagemaker(start_ts, history, horizon)
+        if MOCK_MODE:
+            log.info("Mock mode enabled, returning synthetic data")
+            # Generate synthetic mean: a slight upward trend + some noise
+            import random
+            mean = [round(50 + i * 2 + random.uniform(-5, 5), 2) for i in range(horizon)]
+            p90 = [round(m * 1.2, 2) for m in mean]
+            history_len = 60
+        else:
+            start_ts, history = get_recent_history()
+            mean, p90 = call_sagemaker(start_ts, history, horizon)
+            history_len = len(history)
 
         _cache["data"] = {"mean": mean, "p90": p90, "horizon": horizon}
         _cache["timestamp"] = time.time()
@@ -131,8 +147,9 @@ def forecast():
             "predicted_request_rate": round(mean[horizon - 1], 2),
             "predicted_p90": round(p90[horizon - 1], 2),
             "horizon_minutes": horizon,
-            "history_length": len(history),
+            "history_length": history_len,
             "cached": False,
+            "mock": MOCK_MODE
         })
     except Exception as e:
         log.exception("Forecast failed: %s", e)
@@ -146,7 +163,9 @@ def health():
 
 @app.route("/ready")
 def ready():
-    """Confirm we can reach SageMaker."""
+    """Confirm we can reach SageMaker (or just return OK if in MOCK_MODE)."""
+    if MOCK_MODE:
+        return jsonify({"status": "ready", "mode": "mock"}), 200
     try:
         sm = boto3.client("sagemaker", region_name=AWS_REGION)
         info = sm.describe_endpoint(EndpointName=SAGEMAKER_ENDPOINT)

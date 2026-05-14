@@ -1,22 +1,7 @@
 # docker-compose.yml
 # ------------------
-# Local development setup for week 1. Brings up all four services so you
-# can verify they communicate before moving to Kubernetes/EKS.
-#
-# Notes:
-#   - Metrics Collector won't fully work locally (no Kubernetes API),
-#     but it will start up and you can mock it out.
-#   - Forecast Client and RL Decision Service need real AWS creds OR
-#     stub-mode env vars (see commented blocks).
-#
-# Usage:
-#   export AWS_ACCESS_KEY_ID=...
-#   export AWS_SECRET_ACCESS_KEY=...
-#   export AWS_REGION=ap-south-1
-#   export S3_BUCKET=your-bucket
-#   export SAGEMAKER_ENDPOINT=your-endpoint
-#   export MODEL_S3_BUCKET=your-bucket
-#   docker compose up --build
+# Local development setup for the Intelligent Cloud Resource Scheduler.
+# This configuration runs in MOCK_MODE, allowing it to function without AWS credentials.
 
 version: "3.9"
 
@@ -38,32 +23,51 @@ services:
     ports:
       - "5001:5001"
     environment:
-      - SAGEMAKER_ENDPOINT=${SAGEMAKER_ENDPOINT}
-      - AWS_REGION=${AWS_REGION:-ap-south-1}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - CW_NAMESPACE=IntelligentScheduler
+      - MOCK_MODE=true
+      - AWS_REGION=ap-south-1
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
   rl-decision:
     build: ./rl-decision-service
     ports:
       - "5002:5002"
     environment:
-      - MODEL_S3_BUCKET=${MODEL_S3_BUCKET}
-      - MODEL_S3_KEY=rl-policy.zip
-      - AWS_REGION=${AWS_REGION:-ap-south-1}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - MOCK_MODE=true
       - MIN_PODS=1
       - MAX_PODS=10
+      - LOCAL_MODEL_PATH=/app/rl-policy.zip
+    volumes:
+      # We'll expect the model to be generated and placed here if desired
+      - ./rl-policy.zip:/app/rl-policy.zip:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5002/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
-  # Metrics collector intentionally NOT included by default.
-  # Uncomment if you set up a local kind/minikube cluster and want to test it:
-  #
-  # metrics-collector:
-  #   build: ./metrics-collector
-  #   environment:
-  #     - S3_BUCKET=${S3_BUCKET}
-  #     - AWS_REGION=${AWS_REGION:-ap-south-1}
-  #     - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-  #     - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+  metrics-collector:
+    build: ./metrics-collector
+    environment:
+      - MOCK_MODE=true
+      - STATIC_WORKLOAD_ENDPOINTS=workload:5000
+      - COLLECTION_INTERVAL_SECONDS=10
+    depends_on:
+      - workload
+
+  orchestrator:
+    build: ./workload-service # Re-using workload image for basic python environment
+    command: python /app/orchestrator.py
+    environment:
+      - FORECAST_URL=http://forecast-client:5001/forecast
+      - DECISION_URL=http://rl-decision:5002/decide
+      - WORKLOAD_METRICS_URL=http://workload:5000/metrics
+    volumes:
+      - ./orchestrator.py:/app/orchestrator.py:ro
+    depends_on:
+      - forecast-client
+      - rl-decision
+      - workload
