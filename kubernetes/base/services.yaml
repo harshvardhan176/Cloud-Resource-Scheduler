@@ -1,0 +1,55 @@
+apiVersion: v1
+kind: Service
+metadata: { name: api-gateway, namespace: cloudbrain }
+spec:
+  selector: { app: api-gateway }
+  ports: [{ port: 8000, targetPort: 8000 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: auth-service, namespace: cloudbrain }
+spec:
+  selector: { app: auth-service }
+  ports: [{ port: 8001, targetPort: 8001 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: ml-prediction-service, namespace: cloudbrain }
+spec:
+  selector: { app: ml-prediction-service }
+  ports: [{ port: 8003, targetPort: 8003 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: rl-scheduler-service, namespace: cloudbrain }
+spec:
+  selector: { app: rl-scheduler-service }
+  ports: [{ port: 8004, targetPort: 8004 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: executor-service, namespace: cloudbrain }
+spec:
+  selector: { app: executor-service }
+  ports: [{ port: 8005, targetPort: 8005 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: observability-service, namespace: cloudbrain }
+spec:
+  selector: { app: observability-service }
+  ports: [{ port: 8007, targetPort: 8007 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: dashboard-backend-service, namespace: cloudbrain }
+spec:
+  selector: { app: dashboard-backend-service }
+  ports: [{ port: 8008, targetPort: 8008 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: frontend, namespace: cloudbrain }
+spec:
+  selector: { app: frontend }
+  ports: [{ port: 80, targetPort: 80 }]

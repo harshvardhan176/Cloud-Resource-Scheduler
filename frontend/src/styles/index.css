@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+
+html, body, #root {
+  height: 100%;
+  background: theme('colors.bg.DEFAULT');
+  color: theme('colors.fg.DEFAULT');
+  font-family: theme('fontFamily.sans');
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: theme('colors.border.strong');
+  border-radius: 999px;
+  border: 2px solid theme('colors.bg.DEFAULT');
+}
+::-webkit-scrollbar-thumb:hover { background: theme('colors.fg.faint'); }
+::selection { background: rgba(124, 124, 255, 0.2); }
+
+*:focus-visible {
+  outline: 2px solid theme('colors.accent.DEFAULT');
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@layer components {
+  .panel { @apply bg-bg-100 border border-border rounded-md; }
+  .panel-header { @apply px-4 py-3 border-b border-border flex items-center justify-between; }
+  .panel-title { @apply text-sm font-medium text-fg; }
+  .panel-subtitle { @apply text-xs text-fg-muted mt-0.5; }
+  .panel-body { @apply p-4; }
+  .pill {
+    @apply inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px]
+           bg-bg-200 border border-border rounded text-fg-muted font-medium;
+  }
+  .pill-ok   { @apply bg-ok/10 text-ok border-ok/20; }
+  .pill-warn { @apply bg-warn/10 text-warn border-warn/20; }
+  .pill-err  { @apply bg-err/10 text-err border-err/20; }
+  .pill-info { @apply bg-info/10 text-info border-info/20; }
+  .mono { font-family: theme('fontFamily.mono'); }
+  .row-hover { @apply hover:bg-bg-200/60 transition-colors; }
+  .dot { @apply inline-block w-1.5 h-1.5 rounded-full; }
+  .dot-ok { background: theme('colors.ok'); }
+  .dot-warn { background: theme('colors.warn'); }
+  .dot-err { background: theme('colors.err'); }
+}

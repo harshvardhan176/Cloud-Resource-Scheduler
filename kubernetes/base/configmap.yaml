@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudbrain-config
+  namespace: cloudbrain
+data:
+  ENVIRONMENT: "dev"
+  AWS_REGION: "us-east-1"
+  LOG_LEVEL: "INFO"
+
+  # Inter-service URLs (cluster-internal DNS)
+  API_GATEWAY_URL:           "http://api-gateway:8000"
+  AUTH_SERVICE_URL:          "http://auth-service:8001"
+  ML_PREDICTION_SERVICE_URL: "http://ml-prediction-service:8003"
+  RL_SCHEDULER_SERVICE_URL:  "http://rl-scheduler-service:8004"
+  EXECUTOR_SERVICE_URL:      "http://executor-service:8005"
+  OBSERVABILITY_SERVICE_URL: "http://observability-service:8007"
+  DASHBOARD_BACKEND_URL:     "http://dashboard-backend-service:8008"
+  PROMETHEUS_URL:            "http://prometheus:9090"
+
+  # DynamoDB (Terraform-managed)
+  DYNAMODB_USERS_TABLE:     "cloudbrain-dev-users"
+  DYNAMODB_DECISIONS_TABLE: "cloudbrain-dev-decisions"
+  DYNAMODB_AUDIT_TABLE:     "cloudbrain-dev-audit"
+
+  USE_DYNAMODB: "auto"
+  EXECUTOR_DRY_RUN: "true"

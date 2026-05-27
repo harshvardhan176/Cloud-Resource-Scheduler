@@ -1,0 +1,85 @@
+# CloudBrain · local stack
+# Run: docker compose up --build
+# Dashboard: http://localhost:3000
+
+x-cb-env: &cb-env
+  AWS_REGION: us-east-1
+  JWT_SECRET: cloudbrain-dev-secret
+  ENVIRONMENT: dev
+  API_GATEWAY_URL:           http://api-gateway:8000
+  AUTH_SERVICE_URL:          http://auth-service:8001
+  ML_PREDICTION_SERVICE_URL: http://ml-prediction-service:8003
+  RL_SCHEDULER_SERVICE_URL:  http://rl-scheduler-service:8004
+  EXECUTOR_SERVICE_URL:      http://executor-service:8005
+  OBSERVABILITY_SERVICE_URL: http://observability-service:8007
+  PROMETHEUS_URL:            http://prometheus:9090
+
+services:
+  api-gateway:
+    build: { context: ., dockerfile: microservices/api-gateway/Dockerfile }
+    image: cloudbrain/api-gateway:1.0.0
+    environment: *cb-env
+    ports: ["8000:8000"]
+    networks: [cb]
+
+  auth-service:
+    build: { context: ., dockerfile: microservices/auth-service/Dockerfile }
+    image: cloudbrain/auth-service:1.0.0
+    environment:
+      <<: *cb-env
+      USE_DYNAMODB: "false"   # in-memory locally
+    ports: ["8001:8001"]
+    networks: [cb]
+
+  ml-prediction-service:
+    build: { context: ., dockerfile: microservices/ml-prediction-service/Dockerfile }
+    image: cloudbrain/ml-prediction-service:1.0.0
+    environment: *cb-env
+    ports: ["8003:8003"]
+    networks: [cb]
+
+  rl-scheduler-service:
+    build: { context: ., dockerfile: microservices/rl-scheduler-service/Dockerfile }
+    image: cloudbrain/rl-scheduler-service:1.0.0
+    environment: *cb-env
+    ports: ["8004:8004"]
+    networks: [cb]
+
+  executor-service:
+    build: { context: ., dockerfile: microservices/executor-service/Dockerfile }
+    image: cloudbrain/executor-service:1.0.0
+    environment:
+      <<: *cb-env
+      EXECUTOR_DRY_RUN: "true"
+    ports: ["8005:8005"]
+    networks: [cb]
+
+  observability-service:
+    build: { context: ., dockerfile: microservices/observability-service/Dockerfile }
+    image: cloudbrain/observability-service:1.0.0
+    environment: *cb-env
+    ports: ["8007:8007"]
+    networks: [cb]
+
+  dashboard-backend-service:
+    build: { context: ., dockerfile: microservices/dashboard-backend-service/Dockerfile }
+    image: cloudbrain/dashboard-backend-service:1.0.0
+    environment: *cb-env
+    ports: ["8008:8008"]
+    networks: [cb]
+
+  frontend:
+    build: { context: ./frontend, dockerfile: Dockerfile }
+    image: cloudbrain/frontend:1.0.0
+    ports: ["3000:80"]
+    depends_on: [api-gateway, dashboard-backend-service]
+    networks: [cb]
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    ports: ["9090:9090"]
+    volumes: ["./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    networks: [cb]
+
+networks:
+  cb: { driver: bridge }

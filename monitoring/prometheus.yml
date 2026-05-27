@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: cloudbrain-services
+    static_configs:
+      - targets:
+          - api-gateway:8000
+          - auth-service:8001
+          - ml-prediction-service:8003
+          - rl-scheduler-service:8004
+          - executor-service:8005
+          - observability-service:8007
+          - dashboard-backend-service:8008
+    metrics_path: /metrics

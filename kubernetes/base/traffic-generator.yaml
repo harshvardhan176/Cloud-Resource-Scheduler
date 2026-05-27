@@ -1,0 +1,121 @@
+# ─────────────────────────────────────────────────────────────
+#  Traffic generator — keeps the dashboard alive with real data
+#
+#  Two CronJobs:
+#    cb-traffic    runs every minute, hits the gateway with realistic
+#                  traffic so Prometheus + the dashboard show non-zero
+#                  values (request rate, latency, CPU draw, etc.)
+#    cb-rl-driver  runs every minute, sends one observation to the RL
+#                  scheduler so the decision history populates.
+# ─────────────────────────────────────────────────────────────
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cb-traffic
+  namespace: cloudbrain
+  labels: { app: cb-traffic }
+spec:
+  schedule: "* * * * *"       # every minute
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 55   # job must finish before next minute
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: traffic
+              image: curlimages/curl:8.10.1
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  GATEWAY="http://api-gateway:8000"
+
+                  # Get a token first
+                  TOKEN=$(curl -fsS -X POST "$GATEWAY/auth/login" \
+                    -d "username=ops@cloudbrain.dev&password=ops123" \
+                    | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+
+                  if [ -z "$TOKEN" ]; then
+                    echo "auth failed, using public endpoints only"
+                  fi
+
+                  # Mix of authenticated + public endpoints
+                  PUBLIC="/healthz /auth/me /ml/models /rl/agent"
+                  AUTHED="/auth/me /ml/models /rl/agent /rl/action-space /exec/history"
+
+                  # Fire 45 requests over ~50 s — averages ~0.9 RPS sustained
+                  i=0
+                  while [ $i -lt 45 ]; do
+                    PATH_=$(echo $AUTHED | tr ' ' '\n' | shuf -n 1 2>/dev/null || echo /healthz)
+                    if [ -n "$TOKEN" ]; then
+                      curl -fsS -o /dev/null -H "Authorization: Bearer $TOKEN" "$GATEWAY$PATH_" || true
+                    else
+                      curl -fsS -o /dev/null "$GATEWAY$PATH_" || true
+                    fi
+                    sleep 1
+                    i=$((i+1))
+                  done
+                  echo "done"
+              resources:
+                requests: { cpu: "10m", memory: "16Mi" }
+                limits:   { cpu: "100m", memory: "64Mi" }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cb-rl-driver
+  namespace: cloudbrain
+  labels: { app: cb-rl-driver }
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 55
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: rl-driver
+              image: curlimages/curl:8.10.1
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  GATEWAY="http://api-gateway:8000"
+                  TOKEN=$(curl -fsS -X POST "$GATEWAY/auth/login" \
+                    -d "username=ops@cloudbrain.dev&password=ops123" \
+                    | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+
+                  if [ -z "$TOKEN" ]; then
+                    echo "auth failed"; exit 0
+                  fi
+
+                  # Send several decisions per minute, varying the observation
+                  i=0
+                  while [ $i -lt 6 ]; do
+                    # Random-ish observation — uses /dev/urandom for slight variation
+                    R1=$(awk -v n=$i 'BEGIN{srand(n); print rand()}' </dev/null)
+                    R2=$(awk -v n=$i 'BEGIN{srand(n+10); print rand()}' </dev/null)
+                    R3=$(awk -v n=$i 'BEGIN{srand(n+20); print rand()}' </dev/null)
+                    CPU="0.$(awk -v n=$i 'BEGIN{srand(n); print int(rand()*99)}')"
+                    LAT="0.$(awk -v n=$i 'BEGIN{srand(n+5); print int(rand()*99)}')"
+
+                    curl -fsS -X POST "$GATEWAY/rl/decide" \
+                      -H "Authorization: Bearer $TOKEN" \
+                      -H "Content-Type: application/json" \
+                      -d "{\"cpu_util\":$CPU,\"mem_util\":$R1,\"queue_len\":$R2,\"active_users\":$R3,\"latency_p95\":$LAT,\"pod_count\":0.3,\"forecast_cpu_t60\":$R1}" \
+                      >/dev/null || true
+                    sleep 8
+                    i=$((i+1))
+                  done
+                  echo "done"
+              resources:
+                requests: { cpu: "10m", memory: "16Mi" }
+                limits:   { cpu: "100m", memory: "64Mi" }

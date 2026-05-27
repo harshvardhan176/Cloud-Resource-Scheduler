@@ -1,0 +1,203 @@
+# ─────────────────────────────────────────────────────────────
+#  CloudBrain · Deployments (7 microservices + frontend)
+# ─────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api-gateway, namespace: cloudbrain, labels: { app: api-gateway } }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: api-gateway } }
+  template:
+    metadata:
+      labels: { app: api-gateway }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+    spec:
+      containers:
+        - name: api-gateway
+          image: REGISTRY/cloudbrain/api-gateway:1.0.0
+          ports: [{ containerPort: 8000 }]
+          envFrom:
+            - configMapRef: { name: cloudbrain-config }
+            - secretRef:    { name: cloudbrain-secrets }
+          livenessProbe:  { httpGet: { path: /healthz, port: 8000 }, initialDelaySeconds: 15 }
+          readinessProbe: { httpGet: { path: /healthz, port: 8000 }, initialDelaySeconds: 5 }
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: auth-service, namespace: cloudbrain, labels: { app: auth-service } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: auth-service } }
+  template:
+    metadata:
+      labels: { app: auth-service }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+    spec:
+      containers:
+        - name: auth-service
+          image: REGISTRY/cloudbrain/auth-service:1.0.0
+          ports: [{ containerPort: 8001 }]
+          envFrom:
+            - configMapRef: { name: cloudbrain-config }
+            - secretRef:    { name: cloudbrain-secrets }
+          livenessProbe:  { httpGet: { path: /healthz, port: 8001 }, initialDelaySeconds: 15 }
+          readinessProbe: { httpGet: { path: /healthz, port: 8001 }, initialDelaySeconds: 5 }
+          resources:
+            requests: { cpu: "50m",  memory: "96Mi" }
+            limits:   { cpu: "300m", memory: "256Mi" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: ml-prediction-service, namespace: cloudbrain, labels: { app: ml-prediction-service } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: ml-prediction-service } }
+  template:
+    metadata:
+      labels: { app: ml-prediction-service }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8003"
+    spec:
+      containers:
+        - name: ml-prediction-service
+          image: REGISTRY/cloudbrain/ml-prediction-service:1.0.0
+          ports: [{ containerPort: 8003 }]
+          envFrom:
+            - configMapRef: { name: cloudbrain-config }
+            - secretRef:    { name: cloudbrain-secrets }
+          livenessProbe:  { httpGet: { path: /healthz, port: 8003 }, initialDelaySeconds: 20 }
+          readinessProbe: { httpGet: { path: /healthz, port: 8003 }, initialDelaySeconds: 5 }
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: rl-scheduler-service, namespace: cloudbrain, labels: { app: rl-scheduler-service } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: rl-scheduler-service } }
+  template:
+    metadata:
+      labels: { app: rl-scheduler-service }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8004"
+    spec:
+      containers:
+        - name: rl-scheduler-service
+          image: REGISTRY/cloudbrain/rl-scheduler-service:1.0.0
+          ports: [{ containerPort: 8004 }]
+          envFrom:
+            - configMapRef: { name: cloudbrain-config }
+            - secretRef:    { name: cloudbrain-secrets }
+          livenessProbe:  { httpGet: { path: /healthz, port: 8004 }, initialDelaySeconds: 20 }
+          readinessProbe: { httpGet: { path: /healthz, port: 8004 }, initialDelaySeconds: 5 }
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: executor-service, namespace: cloudbrain, labels: { app: executor-service } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: executor-service } }
+  template:
+    metadata:
+      labels: { app: executor-service }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8005"
+    spec:
+      containers:
+        - name: executor-service
+          image: REGISTRY/cloudbrain/executor-service:1.0.0
+          ports: [{ containerPort: 8005 }]
+          envFrom:
+            - configMapRef: { name: cloudbrain-config }
+            - secretRef:    { name: cloudbrain-secrets }
+          livenessProbe:  { httpGet: { path: /healthz, port: 8005 }, initialDelaySeconds: 15 }
+          readinessProbe: { httpGet: { path: /healthz, port: 8005 }, initialDelaySeconds: 5 }
+          resources:
+            requests: { cpu: "50m",  memory: "96Mi" }
+            limits:   { cpu: "300m", memory: "256Mi" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: observability-service, namespace: cloudbrain, labels: { app: observability-service } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: observability-service } }
+  template:
+    metadata:
+      labels: { app: observability-service }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8007"
+    spec:
+      containers:
+        - name: observability-service
+          image: REGISTRY/cloudbrain/observability-service:1.0.0
+          ports: [{ containerPort: 8007 }]
+          envFrom:
+            - configMapRef: { name: cloudbrain-config }
+            - secretRef:    { name: cloudbrain-secrets }
+          livenessProbe:  { httpGet: { path: /healthz, port: 8007 }, initialDelaySeconds: 15 }
+          readinessProbe: { httpGet: { path: /healthz, port: 8007 }, initialDelaySeconds: 5 }
+          resources:
+            requests: { cpu: "50m",  memory: "96Mi" }
+            limits:   { cpu: "300m", memory: "256Mi" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: dashboard-backend-service, namespace: cloudbrain, labels: { app: dashboard-backend-service } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: dashboard-backend-service } }
+  template:
+    metadata:
+      labels: { app: dashboard-backend-service }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8008"
+    spec:
+      containers:
+        - name: dashboard-backend-service
+          image: REGISTRY/cloudbrain/dashboard-backend-service:1.0.0
+          ports: [{ containerPort: 8008 }]
+          envFrom:
+            - configMapRef: { name: cloudbrain-config }
+            - secretRef:    { name: cloudbrain-secrets }
+          livenessProbe:  { httpGet: { path: /healthz, port: 8008 }, initialDelaySeconds: 15 }
+          readinessProbe: { httpGet: { path: /healthz, port: 8008 }, initialDelaySeconds: 5 }
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: frontend, namespace: cloudbrain, labels: { app: frontend } }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: frontend } }
+  template:
+    metadata: { labels: { app: frontend } }
+    spec:
+      containers:
+        - name: frontend
+          image: REGISTRY/cloudbrain/frontend:1.0.0
+          ports: [{ containerPort: 80 }]
+          livenessProbe:  { httpGet: { path: /healthz, port: 80 }, initialDelaySeconds: 10 }
+          readinessProbe: { httpGet: { path: /healthz, port: 80 }, initialDelaySeconds: 3 }
+          resources:
+            requests: { cpu: "50m",  memory: "64Mi" }
+            limits:   { cpu: "200m", memory: "256Mi" }

@@ -1,0 +1,110 @@
+# ─────────────────────────────────────────────────────────────
+#  CloudBrain · eksctl cluster definition
+#
+#  Apply with:  eksctl create cluster -f cluster.yaml
+#  Delete with: eksctl delete cluster -f cluster.yaml
+# ─────────────────────────────────────────────────────────────
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: cloudbrain
+  region: us-east-1
+  version: "1.30"
+  tags:
+    Project: CloudBrain
+    Environment: dev
+
+vpc:
+  cidr: "10.0.0.0/16"
+  nat:
+    gateway: Single        # one NAT only — cheaper for dev
+
+# Single managed node group — 2 t3.medium on-demand
+managedNodeGroups:
+  - name: workers
+    instanceType: t3.medium
+    minSize: 2
+    maxSize: 4
+    desiredCapacity: 2
+    volumeSize: 30
+    iam:
+      withAddonPolicies:
+        autoScaler: true
+        cloudWatch: true
+        externalDNS: false
+        certManager: false
+        albIngress: true     # so the ALB Ingress controller can manage ALBs
+        ebs: true            # for any persistent volumes we add
+      attachPolicy:          # extra inline policy for CloudBrain's AWS API needs
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:DescribeTable
+              - dynamodb:BatchGetItem
+              - dynamodb:BatchWriteItem
+            Resource: "arn:aws:dynamodb:*:*:table/cloudbrain-*"
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:ListBucket
+            Resource:
+              - "arn:aws:s3:::cloudbrain-*"
+              - "arn:aws:s3:::cloudbrain-*/*"
+          - Effect: Allow
+            Action:
+              - sns:Publish
+            Resource: "arn:aws:sns:*:*:cloudbrain-*"
+          - Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogGroups
+              - logs:DescribeLogStreams
+              - logs:FilterLogEvents
+            Resource: "arn:aws:logs:*:*:log-group:/cloudbrain/*"
+          - Effect: Allow
+            Action:
+              - cloudwatch:GetMetricStatistics
+              - cloudwatch:ListMetrics
+              - cloudwatch:DescribeAlarms
+              - cloudwatch:DescribeAlarmsForMetric
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - ec2:DescribeInstances
+              - ec2:DescribeInstanceStatus
+              - ec2:RunInstances
+              - ec2:TerminateInstances
+              - ec2:CreateTags
+            Resource: "*"
+
+# IAM OIDC provider — required for IRSA
+iam:
+  withOIDC: true
+
+# CloudWatch addon for cluster + container insights
+cloudWatch:
+  clusterLogging:
+    enableTypes: ["audit", "authenticator", "controllerManager"]
+    logRetentionInDays: 7
+
+# Native EKS add-ons — installed at cluster creation
+addons:
+  - name: vpc-cni
+    version: latest
+  - name: coredns
+    version: latest
+  - name: kube-proxy
+    version: latest
+  - name: aws-ebs-csi-driver
+    version: latest
